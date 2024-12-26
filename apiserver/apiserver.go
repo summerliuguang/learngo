@@ -1,10 +1,12 @@
-package main
+package apiserver
 
 import (
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/gorilla/mux"
+	pqcontrol "github.com/summerliuguang/learngo/pqcontrol"
 )
 
 type APIServer struct {
@@ -30,11 +32,26 @@ func NewAPIServer(addr string) *APIServer {
 
 func (s *APIServer) Run() error {
 	router := mux.NewRouter()
-	router.HandleFunc("/getuser/{user}", func(w http.ResponseWriter, r *http.Request) {
+	router.HandleFunc("/getuser/{userid}", func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
-		user := vars["user"]
-		log.Println("User:", vars)
-		w.Write([]byte("Hello, " + user))
+		userid := vars["userid"]
+		name, result := pqcontrol.GetUserById(userid)
+		if result != pqcontrol.Success {
+			http.Error(w, "Get user failed", http.StatusInternalServerError)
+			return
+		}
+		w.Write([]byte("Hello, " + name + "\n"))
+	}).Methods("GET")
+
+	router.HandleFunc("/getuserlist", func(w http.ResponseWriter, r *http.Request) {
+		users, result := pqcontrol.GetUsers()
+		if result != pqcontrol.Success {
+			http.Error(w, "Get users failed", http.StatusInternalServerError)
+			return
+		}
+
+		w.Write([]byte("Users: " + strings.Join(users, ", ") + "\n"))
+
 	}).Methods("GET")
 
 	v1 := mux.NewRouter()

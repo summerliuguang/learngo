@@ -1,5 +1,7 @@
 package main
 
+import apiserver "github.com/summerliuguang/learngo/apiserver"
+
 // func init() {
 //     file, err := os.OpenFile("server.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 //     if err!= nil {
@@ -9,6 +11,6 @@ package main
 // }
 
 func main() {
-	var server = NewAPIServer(":8080")
+	var server = apiserver.NewAPIServer(":8080")
 	server.Run()
 }
