@@ -16,6 +16,7 @@ const (
 	ConnectFailed
 	QueryFailed
 	ScanFailed
+	AuthFailed
 )
 
 type CONNECT_DATA struct {
@@ -29,6 +30,10 @@ type CONNECT_DATA struct {
 var db *sql.DB
 var once sync.Once
 var readConn CONNECT_DATA
+
+func init() {
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+}
 
 func initReadConn() {
 	readConn.user = os.Getenv("DB_READ_ROLE")
@@ -100,6 +105,21 @@ func GetUserById(userid string) (string, int) {
 	if err != nil {
 		log.Println("Query failed:", err)
 		return "", QueryFailed
+	}
+	return name, Success
+}
+
+func AuthAccount(userid, password string) (string, int) {
+	db, err := initDB()
+	if err != nil {
+		log.Println("Init database failed:", err)
+		return "", ConnectFailed
+	}
+	var name string
+	err = db.QueryRow("SELECT user_name FROM ttkkai_user WHERE user_id = $1 AND user_password = $2", userid, password).Scan(&name)
+	if err != nil {
+		log.Println("Query failed:", err)
+		return "", AuthFailed
 	}
 	return name, Success
 }
