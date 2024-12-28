@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gorilla/mux"
@@ -20,6 +21,7 @@ func (s *APIServer) RegisterRouter(router *mux.Router) {
 	router.HandleFunc("/getuser/{userid}", getUserById).Methods("GET")
 	router.HandleFunc("/getuserlists", getUserList).Methods("GET")
 	router.HandleFunc("/login", loginAuthentication).Methods("POST")
+	router.HandleFunc("/register", registerUser).Methods("POST")
 }
 
 // Register Middleware
@@ -44,17 +46,15 @@ func (s *APIServer) createSubRouter(router *mux.Router, apipath string) *mux.Rou
 }
 
 func (s *APIServer) configureRouter() *mux.Router {
-	// 主路由
+	// main router
 	router := mux.NewRouter()
-	s.RegisterRouter(router) // 注册基础路由
+	s.RegisterRouter(router)
 
-	// 创建子路由并应用中间件
 	v1 := s.createSubRouter(router, "/api/v1")
 	s.registerMiddlewareV1(v1)
 	common := s.createSubRouter(router, "/common")
 	s.RegisterMiddlewareCommon(common)
 
-	// 主路由整合子路由
 	r := mux.NewRouter()
 	r.PathPrefix("/api/v1").Handler(v1)
 	r.PathPrefix("/common").Handler(common)
@@ -125,11 +125,6 @@ func getUserList(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Users: " + strings.Join(users, ", ") + "\n"))
 }
 
-type LoginRequest struct {
-	Userid   string `json:"userid"`
-	Password string `json:"password"`
-}
-
 func loginAuthentication(w http.ResponseWriter, r *http.Request) {
 	var loginRequest LoginRequest
 	decoder := json.NewDecoder(r.Body)
@@ -138,7 +133,7 @@ func loginAuthentication(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
-	username, result := pqcontrol.AuthAccount(loginRequest.Userid, loginRequest.Password)
+	username, result := pqcontrol.AuthAccount(loginRequest.Username, loginRequest.Password)
 	if result != pqcontrol.Success {
 		http.Error(w, "Authentication failed", http.StatusUnauthorized)
 		return
@@ -150,4 +145,24 @@ func loginAuthentication(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Authorization", "Bearer "+signedToken)
 	w.Write([]byte(username + " login successful\n"))
+}
+
+func registerUser(w http.ResponseWriter, r *http.Request) {
+	var loginRequest LoginRequest
+	decoder := json.NewDecoder(r.Body)
+	err := decoder.Decode(&loginRequest)
+	if err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+	userid, result := pqcontrol.CreateAccount(loginRequest.Username, loginRequest.Password)
+	if result != pqcontrol.Success {
+		if result == pqcontrol.UserAlreadyExists {
+			http.Error(w, "Error: User already exists", http.StatusInternalServerError)
+		} else {
+			http.Error(w, "User creation failed", http.StatusInternalServerError)
+		}
+		return
+	}
+	w.Write([]byte("User: " + strconv.FormatInt(userid, 10) + " created successfully\n"))
 }

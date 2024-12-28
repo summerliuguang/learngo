@@ -8,7 +8,9 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/bwmarrin/snowflake"
 	_ "github.com/lib/pq"
+	"golang.org/x/crypto/bcrypt"
 )
 
 const (
@@ -17,6 +19,12 @@ const (
 	QueryFailed
 	ScanFailed
 	AuthFailed
+	InsertFailed
+	UpdateFailed
+	DeleteFailed
+	UnknownError
+	UserAlreadyExists
+	CryptFailed
 )
 
 type CONNECT_DATA struct {
@@ -109,17 +117,71 @@ func GetUserById(userid string) (string, int) {
 	return name, Success
 }
 
-func AuthAccount(userid, password string) (string, int) {
+func AuthAccount(username string, password string) (string, int) {
 	db, err := initDB()
 	if err != nil {
 		log.Println("Init database failed:", err)
 		return "", ConnectFailed
 	}
-	var name string
-	err = db.QueryRow("SELECT user_name FROM ttkkai_user WHERE user_id = $1 AND user_password = $2", userid, password).Scan(&name)
+	var hashedPassword string
+	err = db.QueryRow("SELECT user_password FROM ttkkai_user WHERE user_name = $1", username).Scan(&hashedPassword)
 	if err != nil {
 		log.Println("Query failed:", err)
 		return "", AuthFailed
 	}
-	return name, Success
+	if !checkPasswordHash(password, hashedPassword) {
+		return "", AuthFailed
+	}
+	return username, Success
+}
+
+// create a new userid with snoyflke
+func createUserID() int64 {
+	node, err := snowflake.NewNode(1)
+	if err != nil {
+		log.Fatal(err)
+	}
+	id := node.Generate()
+	return id.Int64()
+}
+
+func CreateAccount(Username, password string) (int64, int) {
+	db, err := initDB()
+	if err != nil {
+		log.Println("Init database failed:", err)
+		return 0, ConnectFailed
+	}
+
+	var existingUsername string
+	err = db.QueryRow("SELECT user_name FROM ttkkai_user WHERE user_name = $1", Username).Scan(&existingUsername)
+	if err == nil {
+		log.Println("Username already exists:", Username)
+		return 0, UserAlreadyExists
+	}
+
+	userid := createUserID()
+	hashedPassword, err := cryptPassword(password)
+	if err != nil {
+		log.Println("Crypt password failed:", err)
+		return 0, CryptFailed
+	}
+	err = db.QueryRow("INSERT INTO ttkkai_user (user_id, user_name, user_password) VALUES ($1, $2, $3) ON CONFLICT (user_name) DO NOTHING RETURNING user_id", userid, Username, hashedPassword).Scan(&userid)
+	if err != nil {
+		log.Println("Insert user failed:", err)
+		return 0, InsertFailed
+	}
+	return userid, Success
+}
+
+func cryptPassword(password string) (string, error) {
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return "", err
+	}
+	return string(hashedPassword), nil
+}
+
+func checkPasswordHash(password, hash string) bool {
+	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
+	return err == nil
 }

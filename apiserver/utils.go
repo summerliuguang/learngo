@@ -10,6 +10,7 @@ import (
 )
 
 var jwtKey = []byte("")
+var jwtIssuer = ""
 var jwtExpire = time.Hour * 24
 
 type Claims struct {
@@ -20,6 +21,10 @@ type Claims struct {
 // SetJWTKey set the jwt key
 func init() {
 	jwtKey = []byte(os.Getenv("JWT_KEY"))
+	jwtIssuer = os.Getenv("JWT_ISSUER")
+	if len(jwtKey) == 0 || len(jwtIssuer) == 0 {
+		log.Fatal("JWT_KEY and JWT_ISSUER must be set")
+	}
 }
 
 func GenerateJWT(username string) (string, error) {
@@ -27,7 +32,7 @@ func GenerateJWT(username string) (string, error) {
 		Username: username,
 		StandardClaims: jwt.StandardClaims{
 			ExpiresAt: time.Now().Add(jwtExpire).Unix(),
-			Issuer:    "ttkkai",
+			Issuer:    jwtIssuer,
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -43,8 +48,6 @@ func ValidJWT(signedToken string) (*Claims, error) {
 		return nil, err
 	}
 	claims, ok := token.Claims.(*Claims)
-	log.Println("w ", claims, ok)
-
 	if !ok || !token.Valid {
 		return nil, fmt.Errorf("invalid token")
 	}
