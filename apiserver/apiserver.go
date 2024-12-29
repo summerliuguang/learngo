@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/gorilla/mux"
+	"github.com/rs/cors"
 	pqcontrol "github.com/summerliuguang/learngo/pqcontrol"
 )
 
@@ -58,6 +59,16 @@ func (s *APIServer) configureRouter() *mux.Router {
 	r := mux.NewRouter()
 	r.PathPrefix("/api/v1").Handler(v1)
 	r.PathPrefix("/common").Handler(common)
+
+	corsHandler := cors.New(cors.Options{
+		AllowedOrigins:   []string{"*"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Content-Type", "Authorization"},
+		AllowCredentials: true,
+	})
+	r.Use(func(next http.Handler) http.Handler {
+		return corsHandler.Handler(next)
+	})
 
 	return r
 }
@@ -155,14 +166,45 @@ func registerUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
+	// check turnstile token in request header
+	// if r.Method == http.MethodPost {
+	// 	fmt.Println(r.Header)
+	// }
+	var turnstileVerify TurnstileVerify
+	turnstileVerify.Response = loginRequest.TurnstileToken
+	turnstileStatus := VaildTurnstile(turnstileVerify)
+	if !turnstileStatus {
+		http.Error(w, "Invalid Turnstile Token", http.StatusUnauthorized)
+		return
+	}
+
 	userid, result := pqcontrol.CreateAccount(loginRequest.Username, loginRequest.Password)
+	response := Response{
+		Code:    0,
+		Message: "",
+	}
+	w.Header().Set("Content-Type", "application/json")
 	if result != pqcontrol.Success {
 		if result == pqcontrol.UserAlreadyExists {
-			http.Error(w, "Error: User already exists", http.StatusInternalServerError)
+			response.Code = pqcontrol.UserAlreadyExists
+			response.Message = "Error: User already exists"
+			responseData, err := json.Marshal(response)
+			if err != nil {
+				http.Error(w, "Error marshalling response", http.StatusInternalServerError)
+				return
+			}
+			w.Write(responseData)
 		} else {
 			http.Error(w, "User creation failed", http.StatusInternalServerError)
 		}
 		return
 	}
-	w.Write([]byte("User: " + strconv.FormatInt(userid, 10) + " created successfully\n"))
+	response.Code = pqcontrol.Success
+	response.Message = "User: " + strconv.FormatInt(userid, 10) + " created successfully"
+	responseData, err := json.Marshal(response)
+	if err != nil {
+		http.Error(w, "Error marshalling response", http.StatusInternalServerError)
+		return
+	}
+	w.Write(responseData)
 }
